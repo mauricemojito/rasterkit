@@ -127,7 +127,8 @@ fn main() {
 
     let factory = RasterkitCommandFactory::new();
 
-    match factory.create_command(&matches, &logger) {
+    let command_result = factory.create_command(&matches, &logger);
+    match command_result {
         Ok(command) => {
             if let Err(e) = command.execute() {
                 error!("Command execution error: {}", e);
@@ -140,5 +141,5 @@ fn main() {
             eprintln!("Error: {}", e);
             process::exit(1);
         }
-    }
+    };
 }
