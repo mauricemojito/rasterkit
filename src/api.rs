@@ -321,7 +321,7 @@ impl RasterKit {
         info!("Extracting array data from {} to memory", input_path);
 
         // Create an array extractor
-        let mut extractor = crate::extractor::ImageExtractor::new_array_extractor(&self.logger);
+        let mut extractor = ImageExtractor::new_array_extractor(&self.logger);
 
         // Convert region format if provided
         let extraction_region = region.map(|(x, y, width, height)| Region::new(x, y, width, height));
