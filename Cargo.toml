@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["Maurice Schilpp <maurice.schilpp.beyond@gmail.com>"]
 description = "TIFF/GeoTIFF file structure analysis and manipulation tool"
 license = "MIT"
-repository = "https://github.com/yourusername/rasterkit"
+repository = "https://github.com/mauricemojito/rasterkit"
 documentation = "https://docs.rs/rasterkit"
 keywords = ["tiff", "geotiff", "image", "analysis", "conversion"]
 categories = ["command-line-utilities", "multimedia::images"]
@@ -15,6 +15,7 @@ include = [
     "LICENSE",
     "README.md",
     "geotiff_tags.toml",
+    "Logo.png"
 ]
 
 [lib]
