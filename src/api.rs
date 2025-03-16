@@ -1,4 +1,5 @@
 use std::path::Path;
+use image::DynamicImage;
 use log::info;
 use crate::tiff::errors::TiffResult;
 use crate::utils::logger::Logger;
@@ -328,5 +329,93 @@ impl RasterKit {
 
         // Extract array data
         extractor.extract_array_data(input_path, extraction_region)
+    }
+
+    /// Extract an image from a TIFF file to memory
+    ///
+    /// This method provides the same region specification options as `extract`,
+    /// but returns the image in memory instead of writing it to a file.
+    ///
+    /// # Arguments
+    /// * `input_path` - Path to the input TIFF file
+    /// * `region` - Optional pixel region to extract (x, y, width, height)
+    /// * `bbox` - Optional geographic bounding box as "minx,miny,maxx,maxy"
+    /// * `coordinate` - Optional geographic coordinate as "x,y"
+    /// * `radius` - Optional radius in meters around the coordinate
+    /// * `shape` - Optional shape for coordinate-based extraction ("circle" or "square")
+    /// * `crs` - Optional CRS code for the bounding box/coordinate coordinates
+    /// * `colormap_path` - Optional path to a colormap file to apply
+    ///
+    /// # Returns
+    /// Result containing the extracted image or an error
+    pub fn extract_to_buffer(&self,
+                             input_path: &str,
+                             region: Option<(u32, u32, u32, u32)>,
+                             bbox: Option<&str>,
+                             coordinate: Option<&str>,
+                             radius: Option<f64>,
+                             shape: Option<&str>,
+                             crs: Option<u32>,
+                             colormap_path: Option<&str>) -> TiffResult<DynamicImage> {
+
+        // Handle coordinate + radius extraction by converting to a bounding box
+        let effective_bbox = if let (Some(coord_str), Some(rad)) = (coordinate, radius) {
+            let shape_type = shape.unwrap_or("square");
+            info!("Using coordinate-based extraction with {} meters radius (shape: {})",
+            rad, shape_type);
+
+            match crate::utils::coordinate_utils::coord_to_bbox(coord_str, rad, shape_type, crs) {
+                Ok(bbox_str) => {
+                    info!("Converted coordinate to bounding box: {}", bbox_str);
+                    Some(bbox_str)
+                },
+                Err(e) => return Err(e),
+            }
+        } else {
+            bbox.map(|s| {
+                info!("Using bounding box extraction: {}", s);
+                s.to_string()
+            })
+        };
+
+        // Determine the extraction region
+        let extraction_region = self.determine_extraction_region(input_path, region, effective_bbox.as_deref(), crs)?;
+
+        // Create an extractor instance
+        let mut extractor = ImageExtractor::new(&self.logger);
+
+        // If a colormap is specified, handle with colormap extraction
+        if let Some(cmap_path) = colormap_path {
+            info!("Colormap specified, using colormap extraction with '{}'", cmap_path);
+
+            // Extract image data to memory
+            let image = extractor.extract_image(input_path, extraction_region)?;
+
+            // Apply colormap to the extracted image
+            let grayscale = image.to_luma8();
+            let colormap = crate::utils::colormap_utils::load_colormap(cmap_path, &self.logger)?;
+            let rgb_image = crate::utils::colormap_utils::apply_colormap_to_image(&grayscale, &colormap);
+
+            // Apply shape mask if needed
+            if let Some(shape_str) = shape {
+                if shape_str.to_lowercase() == "circle" {
+                    return Ok(crate::utils::mask_utils::apply_shape_mask(&DynamicImage::ImageRgb8(rgb_image), shape_str));
+                }
+            }
+
+            return Ok(DynamicImage::ImageRgb8(rgb_image));
+        }
+
+        // Extract the image
+        let mut image = extractor.extract_image(input_path, extraction_region)?;
+
+        // Apply shape mask if needed
+        if let Some(shape_str) = shape {
+            if shape_str.to_lowercase() == "circle" {
+                image = crate::utils::mask_utils::apply_shape_mask(&image, shape_str);
+            }
+        }
+
+        Ok(image)
     }
 }
