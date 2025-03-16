@@ -246,7 +246,7 @@ impl<'a> ExtractorStrategy for ArrayExtractorStrategy<'a> {
     /// to satisfy the trait requirements. Simply delegates to extract_to_array
     /// with CSV format.
     fn extract_to_file(&mut self, source_path: &str, output_path: &str,
-                       region: Option<Region>) -> TiffResult<()> {
+                       region: Option<Region>, shape: Option<&str>) -> TiffResult<()> {
         // Default to CSV format for compatibility
         self.extract_to_array(source_path, output_path, "csv", region)
     }

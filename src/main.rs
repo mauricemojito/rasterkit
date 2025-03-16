@@ -55,6 +55,43 @@ fn main() {
                 .required(false),
         )
         .arg(
+            Arg::new("crs")
+                .long("crs")
+                .help("EPSG code for coordinates (e.g., 4326 for WGS84, 3857 for Web Mercator)")
+                .value_name("CODE")
+                .default_value("4326")
+                .required(false),
+        )
+        .arg(
+            Arg::new("proj")
+                .long("proj")
+                .help("Target projection EPSG code for reprojection")
+                .value_name("CODE")
+                .required(false),
+        )
+        .arg(
+            Arg::new("coordinate")
+                .long("coordinate")
+                .help("Geographic coordinate for extraction in 'x,y' format")
+                .value_name("COORDINATE")
+                .required(false),
+        )
+        .arg(
+            Arg::new("radius")
+                .long("radius")
+                .help("Radius in meters around coordinate")
+                .value_name("METERS")
+                .required(false),
+        )
+        .arg(
+            Arg::new("shape")
+                .long("shape")
+                .help("Shape for coordinate extraction (circle or square)")
+                .value_name("SHAPE")
+                .default_value("square")
+                .required(false),
+        )
+        .arg(
             Arg::new("extract-array")
                 .long("extract-array")
                 .help("Extract raw array data instead of image")
@@ -104,12 +141,6 @@ fn main() {
                 .required(false),
         )
         .get_matches();
-
-    println!("Command line arguments:");
-    println!("extract_array flag: {}", matches.get_flag("extract-array"));
-    println!("array_format: {:?}", matches.get_one::<String>("array-format"));
-    println!("input: {:?}", matches.get_one::<String>("input"));
-    println!("output: {:?}", matches.get_one::<String>("output"));
 
     let log_file = "rasterkit.log";
     let logger = match Logger::new(log_file) {

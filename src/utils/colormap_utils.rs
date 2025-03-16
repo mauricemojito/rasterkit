@@ -24,6 +24,11 @@ use crate::utils::reference_utils::add_georeferencing_to_builder;
 /// # Returns
 /// The RGB color for this value
 pub fn find_color_for_value(colormap: &ColorMap, value: u16) -> RgbColor {
+
+    if value == 255 {
+        return RgbColor::new(255, 255, 255);  // White
+    }
+
     if colormap.entries.is_empty() {
         // Default to black if no entries
         return RgbColor::new(0, 0, 0);
@@ -214,15 +219,55 @@ pub fn extract_colormap(tiff_path: &str, output_path: &str, logger: &Logger) -> 
 ///
 /// # Returns
 /// Result indicating success or an error
+/// Save colorized image as a TIFF file with preserved georeferencing, or PNG/JPG if specified
 pub fn save_colorized_tiff(
     rgb_image: image::RgbImage,
     output_path: &str,
     input_path: &str,
     region: Option<Region>,
-    logger: &Logger
+    logger: &Logger,
+    shape: Option<&str>
 ) -> TiffResult<()> {
-    let width = rgb_image.width();
-    let height = rgb_image.height();
+    // Check if the output should be a non-TIFF format
+    let path = std::path::Path::new(output_path);
+    let extension = path.extension()
+        .map(|ext| ext.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+
+    // Convert to DynamicImage for shape masking
+    let dynamic_image = image::DynamicImage::ImageRgb8(rgb_image);
+
+    // Apply shape mask if needed
+    let final_image = if let Some(shape_str) = shape {
+        if shape_str.to_lowercase() == "circle" {
+            crate::utils::mask_utils::apply_shape_mask(&dynamic_image, shape_str)
+        } else {
+            dynamic_image
+        }
+    } else {
+        dynamic_image
+    };
+
+    // If output is PNG, JPG, or any other supported non-TIFF format
+    if extension != "tif" && extension != "tiff" {
+        info!("Saving colorized image to {} format", extension);
+        // Use the mask_utils to handle format selection and transparency
+        if let Some(shape_str) = shape {
+            return crate::utils::mask_utils::save_shaped_image(&final_image, output_path, shape_str);
+        } else {
+            return match final_image.save(output_path) {
+                Ok(_) => Ok(()),
+                Err(e) => Err(TiffError::GenericError(format!("Failed to save image: {}", e)))
+            };
+        }
+    }
+
+    // For TIFF output, continue with existing code...
+    let width = final_image.width();
+    let height = final_image.height();
+
+    // Get the RGB data from the final image
+    let rgb_data = final_image.to_rgb8().into_raw();
 
     // Create a new TIFF builder for an RGB image
     let mut builder = crate::tiff::TiffBuilder::new(logger, false);
@@ -232,9 +277,6 @@ pub fn save_colorized_tiff(
 
     // Set basic RGB tags
     builder.add_basic_rgb_tags(ifd_index, width, height);
-
-    // Convert RGB image to raw data (R,G,B interleaved)
-    let rgb_data = rgb_image.into_raw();
 
     // Set up the strip data
     builder.setup_single_strip(ifd_index, rgb_data);

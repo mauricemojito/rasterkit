@@ -24,11 +24,12 @@ pub trait ExtractorStrategy {
     /// * `source_path` - Path to the source image file
     /// * `output_path` - Path where the extracted image should be saved
     /// * `region` - Optional region to extract (if None, extracts the entire image)
+    /// * `shape` - Optional shape to use ("circle" or "square")
     ///
     /// # Returns
     /// Result indicating success or an error with details
     fn extract_to_file(&mut self, source_path: &str, output_path: &str,
-                       region: Option<Region>) -> TiffResult<()>;
+                       region: Option<Region>, shape: Option<&str>) -> TiffResult<()>;
 
     /// Extract an image from a file to memory
     ///
@@ -185,18 +186,19 @@ impl<'a> ImageExtractor<'a> {
     /// * `source_path` - Path to the source image file
     /// * `output_path` - Path where the extracted image should be saved
     /// * `region` - Optional region to extract (if None, extracts the entire image)
+    /// * `shape` - Optional shape to use ("circle" or "square")
     ///
     /// # Returns
     /// Result indicating success or an error with details
     pub fn extract_to_file(&mut self, source_path: &str, output_path: &str,
-                           region: Option<Region>) -> TiffResult<()> {
+                           region: Option<Region>, shape: Option<&str>) -> TiffResult<()> {
         info!("Extracting from {} to {}", source_path, output_path);
 
         // Create an appropriate strategy for this file format
         let mut strategy = self.factory.create_strategy(source_path)?;
 
         // Delegate the extraction to the strategy
-        strategy.extract_to_file(source_path, output_path, region)
+        strategy.extract_to_file(source_path, output_path, region, shape)
     }
 
     /// Extract an image from a file to memory

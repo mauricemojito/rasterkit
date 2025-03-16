@@ -59,7 +59,7 @@ impl<'a> ExtractorStrategy for TiffExtractorStrategy<'a> {
     /// # Returns
     /// Result indicating success or an error with details
     fn extract_to_file(&mut self, tiff_path: &str, output_path: &str,
-                       region: Option<Region>) -> TiffResult<()> {
+                       region: Option<Region>, shape: Option<&str>) -> TiffResult<()> {
         info!("Extracting image from {} to {}", tiff_path, output_path);
 
         // Load the source TIFF
@@ -90,11 +90,32 @@ impl<'a> ExtractorStrategy for TiffExtractorStrategy<'a> {
         });
 
         info!("Extracting region: x={}, y={}, width={}, height={}",
-              extracted_region.x, extracted_region.y,
-              extracted_region.width, extracted_region.height);
+          extracted_region.x, extracted_region.y,
+          extracted_region.width, extracted_region.height);
 
         // Extract the image data
         let image = self.extract_image(tiff_path, Some(extracted_region))?;
+
+        // Apply shape mask if needed
+        let final_image = if let Some(shape_str) = shape {
+            if shape_str.to_lowercase() == "circle" {
+                crate::utils::mask_utils::apply_shape_mask(&image, shape_str)
+            } else {
+                image
+            }
+        } else {
+            image
+        };
+
+        // Check if we need to use PNG format for transparency
+        if let Some(shape_str) = shape {
+            if shape_str.to_lowercase() == "circle" {
+                return crate::utils::mask_utils::save_shaped_image(&final_image, output_path, shape_str);
+            }
+        }
+
+        // Otherwise continue with normal TIFF saving
+        let image_for_tiff = final_image.to_rgb8();
 
         // Create a TIFF builder and set up base structure
         let mut builder = TiffBuilder::new(self.logger, false);
@@ -102,7 +123,7 @@ impl<'a> ExtractorStrategy for TiffExtractorStrategy<'a> {
         let ifd_index = builder.add_ifd(new_ifd);
 
         // Set up common TIFF tags
-        tiff_extraction_utils::setup_tiff_tags(&mut builder, ifd_index, original_ifd, &image)?;
+        tiff_extraction_utils::setup_tiff_tags(&mut builder, ifd_index, original_ifd, &final_image)?;
 
         // Copy statistics tags
         builder.copy_statistics_tags(ifd_index, original_ifd);
@@ -114,10 +135,10 @@ impl<'a> ExtractorStrategy for TiffExtractorStrategy<'a> {
         // Process image data based on format
         if samples_per_pixel == 1 {
             // Single band (grayscale) image
-            tiff_extraction_utils::process_grayscale_image(&image, &mut builder, ifd_index, bits_per_sample)?;
+            tiff_extraction_utils::process_grayscale_image(&final_image, &mut builder, ifd_index, bits_per_sample)?;
         } else {
             // Multi-band (RGB) image
-            tiff_extraction_utils::process_rgb_image(&image, &mut builder, ifd_index)?;
+            tiff_extraction_utils::process_rgb_image(&final_image, &mut builder, ifd_index)?;
         }
 
         // Handle NoData value
@@ -137,7 +158,7 @@ impl<'a> ExtractorStrategy for TiffExtractorStrategy<'a> {
         builder.write(output_path)?;
 
         info!("Saved {}x{} image to {} with adjusted GeoTIFF metadata",
-              image.width(), image.height(), output_path);
+          final_image.width(), final_image.height(), output_path);
 
         Ok(())
     }

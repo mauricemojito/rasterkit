@@ -15,6 +15,8 @@ pub struct BoundingBox {
     pub max_y: f64,
     /// EPSG code of the coordinate system
     pub epsg: Option<u32>,
+    /// Optional radius in meters (for fallback handling)
+    pub radius_meters: Option<f64>,
 }
 
 impl BoundingBox {
@@ -26,6 +28,7 @@ impl BoundingBox {
             max_x,
             max_y,
             epsg: None,
+            radius_meters: None,
         }
     }
 
@@ -37,6 +40,7 @@ impl BoundingBox {
             max_x,
             max_y,
             epsg: Some(epsg),
+            radius_meters: None,
         }
     }
 
@@ -94,17 +98,26 @@ impl BoundingBox {
     }
 
     /// Convert to a pixel region given a geotransform
+    ///
+    /// This method converts a geographic bounding box to a pixel region
+    /// using the provided geotransform coefficients.
+    ///
+    /// # Arguments
+    /// * `geotransform` - Array of 6 coefficients: [origin_x, pixel_width, 0, origin_y, 0, pixel_height]
+    ///
+    /// # Returns
+    /// A Region object with pixel coordinates
     pub fn to_pixel_region(&self, geotransform: &[f64]) -> crate::extractor::Region {
         let origin_x = geotransform[0];
         let pixel_width = geotransform[1];
         let origin_y = geotransform[3];
-        let pixel_height = geotransform[5];
+        let pixel_height = geotransform[5]; // This is typically negative
 
         // Calculate pixel coordinates - use f64 for intermediate calculations to avoid overflow
         let x_min_f = ((self.min_x - origin_x) / pixel_width).floor();
-        let y_min_f = ((self.min_y - origin_y) / pixel_height).floor();
+        let y_max_f = ((self.min_y - origin_y) / pixel_height).floor();
         let x_max_f = ((self.max_x - origin_x) / pixel_width).ceil();
-        let y_max_f = ((self.max_y - origin_y) / pixel_height).ceil();
+        let y_min_f = ((self.max_y - origin_y) / pixel_height).floor();
 
         // Convert to i64 to handle possible negative values safely
         let x_min = x_min_f as i64;
@@ -116,10 +129,16 @@ impl BoundingBox {
         let start_x = x_min.max(0) as u32;
         let start_y = y_min.max(0) as u32;
 
-        // Calculate dimensions safely
+        // Calculate dimensions safely - ensure they're always positive
         let width = (x_max - x_min).max(0) as u32;
         let height = (y_max - y_min).max(0) as u32;
 
         crate::extractor::Region::new(start_x, start_y, width, height)
+    }
+
+    /// Set the radius in meters for this bounding box
+    pub fn with_radius(mut self, radius: f64) -> Self {
+        self.radius_meters = Some(radius);
+        self
     }
 }

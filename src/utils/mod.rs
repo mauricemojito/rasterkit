@@ -17,3 +17,7 @@ pub(crate) mod tiff_extraction_utils;
 pub(crate) mod image_extraction_utils;
 pub(crate) mod colormap_utils;
 pub(crate) mod reference_utils;
+pub(crate) mod coordinate_utils;
+pub(crate) mod mask_utils;
+mod coordinate_transformer;
+pub(crate) mod reprojection_utils;
