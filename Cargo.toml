@@ -1,0 +1,40 @@
+[package]
+name = "rasterkit"
+version = "0.1.0"
+edition = "2021"
+authors = ["Maurice Schilpp <maurice.schilpp.beyond@gmail.com>"]
+description = "TIFF/GeoTIFF file structure analysis and manipulation tool"
+license = "MIT"
+repository = "https://github.com/yourusername/rasterkit"
+documentation = "https://docs.rs/rasterkit"
+keywords = ["tiff", "geotiff", "image", "analysis", "conversion"]
+categories = ["command-line-utilities", "multimedia::images"]
+include = [
+    "**/*.rs",
+    "Cargo.toml",
+    "LICENSE",
+    "README.md",
+    "geotiff_tags.toml",
+]
+
+[lib]
+name = "rasterkit"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rasterkit"
+path = "src/main.rs"
+
+[dependencies]
+byteorder = "1.5.0"
+log = "0.4.26"
+clap = "4.5.32"
+toml = "0.8.10"
+lazy_static = "1.4.0"
+image = "0.25.5"
+flate2 = "1.1.0"
+zstd = "0.13.3"
+indicatif = "0.17.11"
+env_logger = "0.10"
+regex = "1.11.1"
+quick-xml = "0.37.2"
