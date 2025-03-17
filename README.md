@@ -32,7 +32,7 @@ RasterKit is your go-to toolkit for working with geospatial raster data. Built w
 Clone the repository and build with Cargo:
 
 ```
-git clone https://github.com/username/rasterkit.git
+git clone https://github.com/mauricemojito/rasterkit.git
 cd rasterkit
 cargo build --release
 ```
