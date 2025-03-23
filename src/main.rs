@@ -106,6 +106,19 @@ fn main() {
                 .required(false),
         )
         .arg(
+            Arg::new("filter")
+                .long("filter")
+                .help("Filter values to show only the specified range (e.g., '15,160')")
+                .value_name("MIN,MAX")
+                .required(false),
+        )
+        .arg(
+            Arg::new("filter-transparency")
+                .long("filter-transparency")
+                .help("Make filtered pixels transparent instead of black")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
             Arg::new("colormap-output")
                 .long("colormap-output")
                 .help("Extract colormap from input TIFF to this file")

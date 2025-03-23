@@ -86,6 +86,8 @@ impl RasterKit {
     /// * `shape` - Optional shape for coordinate-based extraction ("circle" or "square")
     /// * `crs` - Optional CRS code for the bounding box/coordinate coordinates
     /// * `colormap_path` - Optional path to a colormap file to apply
+    /// * `filter_range` - Optional value range to filter (e.g., "15,160")
+    /// * `filter_transparency` - Whether to make filtered pixels transparent
     ///
     /// # Returns
     /// Result indicating success or an error
@@ -98,7 +100,9 @@ impl RasterKit {
                    radius: Option<f64>,
                    shape: Option<&str>,
                    crs: Option<u32>,
-                   colormap_path: Option<&str>) -> TiffResult<()> {
+                   colormap_path: Option<&str>,
+                   filter_range: Option<&str>,
+                   filter_transparency: bool) -> TiffResult<()> {
 
         // Handle coordinate + radius extraction by converting to a bounding box
         let effective_bbox = if let (Some(coord_str), Some(rad)) = (coordinate, radius) {
@@ -131,7 +135,7 @@ impl RasterKit {
             let region_tuple = extraction_region.map(|r| (r.x, r.y, r.width, r.height));
 
             // Use the extract_with_colormap function
-            return self.extract_with_colormap(input_path, output_path, cmap_path, region_tuple, shape);
+            return self.extract_with_colormap(input_path, output_path, cmap_path, region_tuple, shape, filter_range, filter_transparency);
         }
 
         // Regular extraction without colormap
@@ -140,7 +144,43 @@ impl RasterKit {
         // Determine the extraction region
         let extraction_region = self.determine_extraction_region(input_path, region, effective_bbox.as_deref(), crs)?;
 
-        // Perform the extraction
+        // Check if we need to filter the values
+        if let Some(range_str) = filter_range {
+            use crate::utils::filter_utils;
+
+            // Extract image to memory first
+            let image = extractor.extract_image(input_path, extraction_region)?;
+
+            // Parse and apply filter
+            if let Ok((min_value, max_value)) = filter_utils::parse_filter_range(range_str) {
+                info!("Applying filter range {}-{}", min_value, max_value);
+
+                // Apply filter
+                let filtered_image = filter_utils::filter_image_values(
+                    &image,
+                    min_value,
+                    max_value,
+                    0,  // Background value
+                    filter_transparency
+                );
+
+                // Apply shape mask if needed
+                let final_image = if let Some(shape_str) = shape {
+                    if shape_str.to_lowercase() == "circle" {
+                        crate::utils::mask_utils::apply_shape_mask(&filtered_image, shape_str)
+                    } else {
+                        filtered_image
+                    }
+                } else {
+                    filtered_image
+                };
+
+                // Save the filtered image
+                return crate::utils::mask_utils::save_shaped_image(&final_image, output_path, shape.unwrap_or("square"));
+            }
+        }
+
+        // Perform the extraction (without filtering)
         extractor.extract_to_file(input_path, output_path, extraction_region, shape)
     }
 
@@ -237,6 +277,8 @@ impl RasterKit {
     /// * `colormap_path` - Path to the colormap file to apply
     /// * `region` - Optional region to extract
     /// * `shape` - Optional shape for extraction ("circle" or "square")
+    /// * `filter_range` - Optional value range to filter (e.g., "15,160")
+    /// * `filter_transparency` - Whether to make filtered pixels transparent
     ///
     /// # Returns
     /// Result indicating success or an error
@@ -245,7 +287,9 @@ impl RasterKit {
                                  output_path: &str,
                                  colormap_path: &str,
                                  region: Option<(u32, u32, u32, u32)>,
-                                 shape: Option<&str>) -> TiffResult<()> {
+                                 shape: Option<&str>,
+                                 filter_range: Option<&str>,
+                                 filter_transparency: bool) -> TiffResult<()> {
 
         let extraction_region = region.map(|(x, y, w, h)| Region::new(x, y, w, h));
 
@@ -254,7 +298,25 @@ impl RasterKit {
 
         // Create extractor and extract the image
         let mut extractor = ImageExtractor::new(&self.logger);
-        let image = extractor.extract_image(input_path, extraction_region)?;
+        let mut image = extractor.extract_image(input_path, extraction_region)?;
+
+        // Apply filtering if specified
+        if let Some(range_str) = filter_range {
+            use crate::utils::filter_utils;
+
+            if let Ok((min_value, max_value)) = filter_utils::parse_filter_range(range_str) {
+                info!("Applying filter range {}-{}", min_value, max_value);
+
+                // Apply filter
+                image = filter_utils::filter_image_values(
+                    &image,
+                    min_value,
+                    max_value,
+                    0,
+                    filter_transparency
+                );
+            }
+        }
 
         // Convert to grayscale and apply colormap
         let grayscale = image.to_luma8();
@@ -345,6 +407,8 @@ impl RasterKit {
     /// * `shape` - Optional shape for coordinate-based extraction ("circle" or "square")
     /// * `crs` - Optional CRS code for the bounding box/coordinate coordinates
     /// * `colormap_path` - Optional path to a colormap file to apply
+    /// * `filter_range` - Optional value range to filter (e.g., "15,160")
+    /// * `filter_transparency` - Whether to make filtered pixels transparent
     ///
     /// # Returns
     /// Result containing the extracted image or an error
@@ -356,7 +420,9 @@ impl RasterKit {
                              radius: Option<f64>,
                              shape: Option<&str>,
                              crs: Option<u32>,
-                             colormap_path: Option<&str>) -> TiffResult<DynamicImage> {
+                             colormap_path: Option<&str>,
+                             filter_range: Option<&str>,
+                             filter_transparency: bool) -> TiffResult<DynamicImage> {
 
         // Handle coordinate + radius extraction by converting to a bounding box
         let effective_bbox = if let (Some(coord_str), Some(rad)) = (coordinate, radius) {
@@ -389,7 +455,25 @@ impl RasterKit {
             info!("Colormap specified, using colormap extraction with '{}'", cmap_path);
 
             // Extract image data to memory
-            let image = extractor.extract_image(input_path, extraction_region)?;
+            let mut image = extractor.extract_image(input_path, extraction_region)?;
+
+            // Apply filtering if specified
+            if let Some(range_str) = filter_range {
+                use crate::utils::filter_utils;
+
+                if let Ok((min_value, max_value)) = filter_utils::parse_filter_range(range_str) {
+                    info!("Applying filter range {}-{}", min_value, max_value);
+
+                    // Apply filter
+                    image = filter_utils::filter_image_values(
+                        &image,
+                        min_value,
+                        max_value,
+                        0,
+                        filter_transparency
+                    );
+                }
+            }
 
             // Apply colormap to the extracted image
             let grayscale = image.to_luma8();
@@ -406,8 +490,26 @@ impl RasterKit {
             return Ok(DynamicImage::ImageRgb8(rgb_image));
         }
 
-        // Extract the image
+        // Extract the image without colormap
         let mut image = extractor.extract_image(input_path, extraction_region)?;
+
+        // Apply filtering if specified
+        if let Some(range_str) = filter_range {
+            use crate::utils::filter_utils;
+
+            if let Ok((min_value, max_value)) = filter_utils::parse_filter_range(range_str) {
+                info!("Applying filter range {}-{}", min_value, max_value);
+
+                // Apply filter
+                image = filter_utils::filter_image_values(
+                    &image,
+                    min_value,
+                    max_value,
+                    0,
+                    filter_transparency
+                );
+            }
+        }
 
         // Apply shape mask if needed
         if let Some(shape_str) = shape {

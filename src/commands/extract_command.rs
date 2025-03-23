@@ -15,6 +15,7 @@ use crate::utils::reference_utils;
 use crate::utils::image_extraction_utils;
 use crate::utils::coordinate_utils;
 use crate::utils::reprojection_utils;
+use crate::utils::filter_utils;
 
 /// Command for extracting image data from TIFF files
 pub struct ExtractCommand<'a> {
@@ -42,6 +43,10 @@ pub struct ExtractCommand<'a> {
     array_mode: bool,
     /// Format for array output
     array_format: String,
+    /// Filter range to extract only specific pixel values (e.g., "15,160")
+    filter_range: Option<String>,
+    /// Whether to make filtered pixels transparent
+    filter_transparency: bool,
     /// Logger for recording operations
     logger: &'a Logger,
 }
@@ -173,6 +178,14 @@ impl<'a> ExtractCommand<'a> {
             .unwrap_or_else(|| "csv".to_string());
         info!("Array format: {}", array_format);
 
+        // Get filter range if provided
+        let filter_range = args.get_one::<String>("filter").cloned();
+        info!("Filter range: {:?}", filter_range);
+
+        // Get filter transparency option
+        let filter_transparency = args.get_flag("filter-transparency");
+        info!("Filter transparency: {}", filter_transparency);
+
         Ok(ExtractCommand {
             input_file,
             output_file,
@@ -186,6 +199,8 @@ impl<'a> ExtractCommand<'a> {
             colormap_input,
             array_mode,
             array_format,
+            filter_range,
+            filter_transparency,
             logger,
         })
     }
@@ -322,8 +337,35 @@ impl<'a> ExtractCommand<'a> {
 
         // First extract the image to memory for colormap application
         info!("Extracting image to memory for colormap application");
-        let image = extractor.extract_image(&self.input_file, region)?;
+        let mut image = extractor.extract_image(&self.input_file, region)?;
         info!("Image extracted: {}x{}", image.width(), image.height());
+
+        // Apply filtering if specified
+        if let Some(filter_str) = &self.filter_range {
+            info!("Applying filter: {}", filter_str);
+
+            // Parse the filter range
+            match filter_utils::parse_filter_range(filter_str) {
+                Ok((min_value, max_value)) => {
+                    info!("Filtering values from {} to {}", min_value, max_value);
+
+                    // Apply the filter
+                    image = filter_utils::filter_image_values(
+                        &image,
+                        min_value,
+                        max_value,
+                        0, // Background value (black)
+                        self.filter_transparency
+                    );
+
+                    info!("Filtering applied");
+                },
+                Err(err) => {
+                    warn!("Failed to parse filter range: {}", err);
+                    warn!("Continuing without filtering");
+                }
+            }
+        }
 
         // Load the colormap
         info!("Loading colormap from {}", colormap_path);
@@ -494,7 +536,7 @@ impl<'a> ExtractCommand<'a> {
         }
 
         info!("Parsed bounding box: min_x={}, min_y={}, max_x={}, max_y={}",
-          bbox.min_x, bbox.min_y, bbox.max_x, bbox.max_y);
+             bbox.min_x, bbox.min_y, bbox.max_x, bbox.max_y);
 
         // Load the TIFF file
         info!("Loading TIFF file to determine region");
@@ -507,7 +549,7 @@ impl<'a> ExtractCommand<'a> {
             bbox, &tiff, &reader, &self.input_file, self.logger)?;
 
         info!("Determined extraction region: x={}, y={}, width={}, height={}",
-          region.x, region.y, region.width, region.height);
+             region.x, region.y, region.width, region.height);
 
         Ok(Some(region))
     }
@@ -564,7 +606,21 @@ impl<'a> Command for ExtractCommand<'a> {
                 // Handle extraction with or without colormap
                 if let Some(colormap_path) = &self.colormap_input {
                     // Extract image data to memory first
-                    let image = extractor.extract_image(&self.input_file, region)?;
+                    let mut image = extractor.extract_image(&self.input_file, region)?;
+
+                    // Apply filtering if specified
+                    if let Some(filter_str) = &self.filter_range {
+                        if let Ok((min_value, max_value)) = filter_utils::parse_filter_range(filter_str) {
+                            info!("Filtering values from {} to {}", min_value, max_value);
+                            image = filter_utils::filter_image_values(
+                                &image,
+                                min_value,
+                                max_value,
+                                0,
+                                self.filter_transparency
+                            );
+                        }
+                    }
 
                     // Apply colormap to the extracted image
                     let grayscale = image.to_luma8();
@@ -582,9 +638,24 @@ impl<'a> Command for ExtractCommand<'a> {
                         Some(&self.shape)
                     )
                 } else {
-                    // Extract, reproject and save without colormap
-                    let image = extractor.extract_image(&self.input_file, region)?;
+                    // Extract image first
+                    let mut image = extractor.extract_image(&self.input_file, region)?;
 
+                    // Apply filtering if specified
+                    if let Some(filter_str) = &self.filter_range {
+                        if let Ok((min_value, max_value)) = filter_utils::parse_filter_range(filter_str) {
+                            info!("Filtering values from {} to {}", min_value, max_value);
+                            image = filter_utils::filter_image_values(
+                                &image,
+                                min_value,
+                                max_value,
+                                0,
+                                self.filter_transparency
+                            );
+                        }
+                    }
+
+                    // Reproject and save without colormap
                     reprojection_utils::reproject_and_save(
                         &image,
                         &self.input_file,
@@ -604,8 +675,36 @@ impl<'a> Command for ExtractCommand<'a> {
                     // Extract with colormap
                     self.extract_with_colormap(&mut extractor, region, colormap_path)
                 } else {
-                    // Simple extraction with shape masking
-                    extractor.extract_to_file(&self.input_file, &self.output_file, region, Some(&self.shape))
+                    // Check if we need to filter
+                    if let Some(filter_str) = &self.filter_range {
+                        // Extract the image first
+                        info!("Extracting and filtering image");
+                        let image = extractor.extract_image(&self.input_file, region)?;
+
+                        // Apply filtering
+                        let filtered_image = match filter_utils::parse_filter_range(filter_str) {
+                            Ok((min_value, max_value)) => {
+                                info!("Filtering values from {} to {}", min_value, max_value);
+                                filter_utils::filter_image_values(
+                                    &image,
+                                    min_value,
+                                    max_value,
+                                    0, // Background value
+                                    self.filter_transparency
+                                )
+                            },
+                            Err(err) => {
+                                warn!("Failed to parse filter range: {}", err);
+                                image
+                            }
+                        };
+
+                        // Save the filtered image
+                        crate::utils::mask_utils::save_shaped_image(&filtered_image, &self.output_file, &self.shape)
+                    } else {
+                        // Simple extraction with shape masking
+                        extractor.extract_to_file(&self.input_file, &self.output_file, region, Some(&self.shape))
+                    }
                 }
             }
         }
